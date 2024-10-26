@@ -1,44 +1,35 @@
+using MassTransit;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Stock.Api.Services;
+using MongoDB.Driver;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSingleton<MongoDbService>();
+
+builder.Services.AddMassTransit(configurator =>
+{
+    configurator.UsingRabbitMq((context, factoryConfigurator) =>
+    {
+        factoryConfigurator.Host(builder.Configuration["RabbitMQ"]);
+    });
+});
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
+using IServiceScope serviceScope = app.Services.CreateScope();
+
+var service = serviceScope.ServiceProvider.GetRequiredService<MongoDbService>();
+
+var stockCollection = service.GetCollection<Stock.Api.Models.Stock>();
+
+var stocksInWarehouse = await stockCollection.FindAsync(c => true);
+
+if (!stocksInWarehouse.Any())
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
+    await stockCollection.InsertOneAsync(new Stock.Api.Models.Stock() { ProductId = 1, Count = 1000 });
+    await stockCollection.InsertOneAsync(new Stock.Api.Models.Stock() { ProductId = 2, Count = 2000 });
+    await stockCollection.InsertOneAsync(new Stock.Api.Models.Stock() { ProductId = 3, Count = 3000 });
 }
-
-app.UseHttpsRedirection();
-
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
-
-app.MapGet("/weatherforecast", () =>
-    {
-        var forecast = Enumerable.Range(1, 5).Select(index =>
-                new WeatherForecast
-                (
-                    DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-                    Random.Shared.Next(-20, 55),
-                    summaries[Random.Shared.Next(summaries.Length)]
-                ))
-            .ToArray();
-        return forecast;
-    })
-    .WithName("GetWeatherForecast")
-    .WithOpenApi();
 
 app.Run();
-
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}

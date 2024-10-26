@@ -1,44 +1,50 @@
+using MassTransit;
+using Microsoft.EntityFrameworkCore;
+using Order.Api.Context;
+using Order.Api.Enums;
+using Order.Api.Models;
+using Order.Api.ViewModels;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddDbContext<OrderDbContext>(options =>
+{
+    options.UseSqlServer(builder.Configuration.GetConnectionString("SqlServer"));
+});
+
+builder.Services.AddMassTransit(configurator =>
+{
+    configurator.UsingRabbitMq((context, factoryConfigurator) =>
+    {
+        factoryConfigurator.Host(builder.Configuration["RabbitMQ"]);
+    });
+});
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
+app.UseSwagger();
+app.UseSwaggerUI();
+
+app.MapPost("/create-order", async (OrderDbContext dbContext, CreateOrderVM model) =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
-
-app.UseHttpsRedirection();
-
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
-
-app.MapGet("/weatherforecast", () =>
+    Order.Api.Models.Order order = new Order.Api.Models.Order()
     {
-        var forecast = Enumerable.Range(1, 5).Select(index =>
-                new WeatherForecast
-                (
-                    DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-                    Random.Shared.Next(-20, 55),
-                    summaries[Random.Shared.Next(summaries.Length)]
-                ))
-            .ToArray();
-        return forecast;
-    })
-    .WithName("GetWeatherForecast")
-    .WithOpenApi();
+        BuyerId = model.BuyerId,
+        CreatedDate = DateTime.Now,
+        OrderStatus = OrderStatus.Suspend,
+        TotalPrice = model.OrderItems.Sum(c => c.Price * c.Count),
+        OrderItems = model.OrderItems.Select(oi =>
+            new OrderItem()
+            {
+                ProductId = oi.ProductId,
+                Count = oi.Count,
+                Price = oi.Price
+            }).ToList()
+    };
 
+    await dbContext.Orders.AddAsync(order);
+    await dbContext.SaveChangesAsync();
+});
 app.Run();
-
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
