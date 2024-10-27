@@ -2,6 +2,8 @@ using MassTransit;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Stock.Api.Services;
 using MongoDB.Driver;
+using Shared.Settings;
+using Stock.Api.Consumers;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -9,9 +11,18 @@ builder.Services.AddSingleton<MongoDbService>();
 
 builder.Services.AddMassTransit(configurator =>
 {
+    configurator.AddConsumer<OrderCreatedEventConsumer>();
+    configurator.AddConsumer<StockRollbackMessageConsumer>();
+    
     configurator.UsingRabbitMq((context, factoryConfigurator) =>
     {
         factoryConfigurator.Host(builder.Configuration["RabbitMQ"]);
+        
+        factoryConfigurator.ReceiveEndpoint(RabbitMQSettings.Stock_OrderCreatedEventQueue,
+            e => e.ConfigureConsumer<OrderCreatedEventConsumer>(context));
+        
+        factoryConfigurator.ReceiveEndpoint(RabbitMQSettings.Stock_RollbackMessageQueue,
+            e => e.ConfigureConsumer<StockRollbackMessageConsumer>(context));
     });
 });
 

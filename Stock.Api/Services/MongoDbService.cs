@@ -9,6 +9,8 @@ public class MongoDbService
     public MongoDbService(IConfiguration configuration)
     {
         MongoClient client = new MongoClient(configuration.GetConnectionString("StockDb"));
+
+        _database = client.GetDatabase("SagaStockDb");
     }
 
     public IMongoCollection<T> GetCollection<T>()
